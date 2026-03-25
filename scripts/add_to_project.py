@@ -29,6 +29,18 @@ headers = {
     "Authorization": f"Bearer {GITHUB_TOKEN}"
 }
 
+labels = os.getenv("LABELS", "")
+label_list = labels.split(",")
+
+print("Labels:", label_list)
+
+if "bug" in label_list:
+    print("Set Type = Bug")
+elif "feature" in label_list:
+    print("Set Type = Feature")
+else:
+    print("No matching label")
+
 response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
 
 print(response.json())
