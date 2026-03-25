@@ -25,4 +25,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           PROJECT_ID: ${{ secrets.PROJECT_ID }}
           ISSUE_ID: ${{ github.event.issue.node_id }}
+          LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
         run: python scripts/add_to_project.py
