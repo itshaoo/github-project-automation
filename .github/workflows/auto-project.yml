@@ -1,29 +1,124 @@
-name: Auto Add Issue to Project
+name: GitHub Project Automation
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
+  pull_request:
+    types: [closed]
 
 jobs:
-  add-to-project:
+  manage-project:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.x
-
-      - name: Install requests
-        run: pip install requests
-
-      - name: Run script
+      - name: Run Python Script
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-          PROJECT_ID: ${{ secrets.PROJECT_ID }}
-          ISSUE_ID: ${{ github.event.issue.node_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_ID: PVT_kwHOBWfN6M4BSuln            # 你的 Project v2 ID
+          STATUS_FIELD_ID: PVTSSF_lAHOBWfN6M4BSulnzhALWQs  # Status 欄位 ID
+          DONE_OPTION_ID: 98236657                     # Done option ID
+          TYPE_FIELD_ID: PVTSSF_lAHOBWfN6M4BSulnzhAldTI    # Type 欄位 ID
+          BUG_OPTION_ID: 55ecb108
+          FEATURE_OPTION_ID: 6591599e
           LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
-        run: python scripts/add_to_project.py
+          ISSUE_ID: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
+          IS_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged }}
+        run: |
+          python3 <<EOF
+          import os
+          import requests
+
+          GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+          PROJECT_ID = os.getenv("PROJECT_ID")
+          ISSUE_ID = os.getenv("ISSUE_ID")
+          STATUS_FIELD_ID = os.getenv("STATUS_FIELD_ID")
+          DONE_OPTION_ID = os.getenv("DONE_OPTION_ID")
+          TYPE_FIELD_ID = os.getenv("TYPE_FIELD_ID")
+          BUG_OPTION_ID = os.getenv("BUG_OPTION_ID")
+          FEATURE_OPTION_ID = os.getenv("FEATURE_OPTION_ID")
+          LABELS = os.getenv("LABELS", "")
+          IS_PR = os.getenv("IS_PR") == "True"
+
+          url = "https://api.github.com/graphql"
+          headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
+
+          # -----------------------------
+          # Step 1：加入 Project
+          # -----------------------------
+          add_query = """
+          mutation($projectId: ID!, $contentId: ID!) {
+            addProjectV2ItemById(input: {
+              projectId: $projectId,
+              contentId: $contentId
+            }) {
+              item { id }
+            }
+          }
+          """
+          variables = {"projectId": PROJECT_ID, "contentId": ISSUE_ID}
+          r = requests.post(url, json={"query": add_query, "variables": variables}, headers=headers)
+          data = r.json()
+          print("Add Item:", data)
+          item_id = data["data"]["addProjectV2ItemById"]["item"]["id"]
+
+          # -----------------------------
+          # Step 2：PR merge → Status = Done
+          # -----------------------------
+          if IS_PR:
+              update_query = """
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId,
+                  itemId: $itemId,
+                  fieldId: $fieldId,
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  projectV2Item { id }
+                }
+              }
+              """
+              variables = {
+                  "projectId": PROJECT_ID,
+                  "itemId": item_id,
+                  "fieldId": STATUS_FIELD_ID,
+                  "optionId": DONE_OPTION_ID
+              }
+              r = requests.post(url, json={"query": update_query, "variables": variables}, headers=headers)
+              print("Set Done:", r.json())
+              exit(0)
+
+          # -----------------------------
+          # Step 3：Issue → 根據 label 設 Type
+          # -----------------------------
+          labels = [l.strip().lower() for l in LABELS.split(",")]
+          type_value = None
+          if "bug" in labels:
+              type_value = BUG_OPTION_ID
+          elif "feature" in labels:
+              type_value = FEATURE_OPTION_ID
+
+          if type_value:
+              update_query = """
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId,
+                  itemId: $itemId,
+                  fieldId: $fieldId,
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  projectV2Item { id }
+                }
+              }
+              """
+              variables = {
+                  "projectId": PROJECT_ID,
+                  "itemId": item_id,
+                  "fieldId": TYPE_FIELD_ID,
+                  "optionId": type_value
+              }
+              r = requests.post(url, json={"query": update_query, "variables": variables}, headers=headers)
+              print("Set Type:", r.json())
+EOF
