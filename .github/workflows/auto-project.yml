@@ -121,4 +121,5 @@ jobs:
               }
               r = requests.post(url, json={"query": update_query, "variables": variables}, headers=headers)
               print("Set Type:", r.json())
-EOF
+          
+          EOF
